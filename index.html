@@ -6,7 +6,7 @@
     <title>WASM Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
-<body style="margin:0; padding:0;">
+<body style="margin:0; padding:0; overflow:hidden;">
 
     <canvas id="glcanvas" width="1500" height="800" style="background:black;"></canvas>
 
@@ -105,26 +105,25 @@ var instance_memory;
 var gl_mousemove;
 var gl_mousedown;
 var gl_mouseup;
+var canvas_elem = document.getElementById("glcanvas");
 
-canvas_w = document.getElementById("glcanvas").width;
-canvas_h = document.getElementById("glcanvas").height;
+canvas_w = document.documentElement.clientWidth;
+canvas_h = document.documentElement.clientHeight;
+canvas_elem.width = canvas_w;
+canvas_elem.height = canvas_h;
 
-document.getElementById("glcanvas").onmousemove=function(){
+canvas_elem.onmousemove=function(){
 	gl_mousemove(event.clientX,event.clientY);
 }
 
-document.getElementById("glcanvas").onmousedown=function(){
+canvas_elem.onmousedown=function(){
 	gl_mousemove(event.clientX,event.clientY);
 	gl_mousedown();
 }
-document.getElementById("glcanvas").onmouseup=function(){
+canvas_elem.onmouseup=function(){
 	gl_mouseup();
 }
 
-document.body.onresize=function(){
-	canvas_w = document.getElementById("glcanvas").width;
-	canvas_h = document.getElementById("glcanvas").height;
-}
 
 
 var framerate = 1000.0/60.0;
@@ -134,7 +133,13 @@ function animate(){
 	loop_func(canvas_w,canvas_h);
 }
 
-
+document.body.onresize = function(){
+	console.log("resize");
+	canvas_w = document.documentElement.clientWidth;
+	canvas_h = document.documentElement.clientHeight;
+	canvas_elem.width = canvas_w;
+	canvas_elem.height = canvas_h;
+}
 
 async function init() {
 	//const memory = new WebAssembly.Memory({ initial: 0 });
