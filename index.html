@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>WASM Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin:0; padding:0;">
+
+    <canvas id="glcanvas" width="1500" height="800" style="background:black;"></canvas>
+
+    <script>
+	
+var out_string = "";
+function con_add_char(c){
+	out_string=out_string+String.fromCharCode(c);
+}
+function con_add_int(i){
+	out_string=out_string+i.toString();
+}
+function con_print(){
+	console.log(out_string);
+	out_string="";
+}
+
+var strarg = new Array();
+
+
+var proglist = new Array();
+var unifloclist = new Array();
+var bufferlist = new Array();
+var filelist = new Array();
+var texlist = new Array();
+
+
+
+
+var loop_func;
+var gl_run_func;
+
+const gl = document.getElementById("glcanvas").getContext("webgl",{
+  depth:false,antialias: false
+});
+
+var loaded_files = 4;
+
+function all_loaded(){
+	console.log("done loading files");
+	gl_run_func();
+}
+
+function load_image(){
+	var img = new Image();
+	var name = strarg[0];
+	img.onload = function(){
+		loaded_files-=1;
+		if (loaded_files==0){
+			all_loaded();
+		}
+		
+		console.log("add image: "+ name);
+	}
+	img.src = strarg[0];
+	filelist.push(img);
+	return filelist.length-1;
+}
+
+function print_array(a){
+	var ab = new Uint8Array(a);
+	var str = "";
+	for (var i=0;i<ab.length;i+=1){
+		str+=" "+ab[i];
+	}
+	return str;
+}
+
+function load_bin(){
+	var fileobj =new Object();
+	fileobj.pos = 0;
+	fileobj.buffer = new Uint8Array();
+
+	var name = strarg[0];
+
+	var at = filelist.length;
+
+	fetch(name).then( response => response.arrayBuffer().then( buffer => {
+
+
+		console.log("add bin: "+name);
+		fileobj.buffer=new Uint8Array(buffer);
+		loaded_files-=1;
+		if (loaded_files==0){
+			all_loaded();
+		}
+		
+
+	} ));
+
+	filelist.push(fileobj);
+	return filelist.length-1;
+}
+
+var instance_memory;
+var gl_mousemove;
+var gl_mousedown;
+var gl_mouseup;
+
+canvas_w = document.getElementById("glcanvas").width;
+canvas_h = document.getElementById("glcanvas").height;
+
+document.getElementById("glcanvas").onmousemove=function(){
+	gl_mousemove(event.clientX,event.clientY);
+}
+
+document.getElementById("glcanvas").onmousedown=function(){
+	gl_mousemove(event.clientX,event.clientY);
+	gl_mousedown();
+}
+document.getElementById("glcanvas").onmouseup=function(){
+	gl_mouseup();
+}
+
+document.body.onresize=function(){
+	canvas_w = document.getElementById("glcanvas").width;
+	canvas_h = document.getElementById("glcanvas").height;
+}
+
+
+var framerate = 1000.0/60.0;
+var last_frame = 0;
+
+function animate(){	
+	loop_func(canvas_w,canvas_h);
+}
+
+
+
+async function init() {
+	//const memory = new WebAssembly.Memory({ initial: 0 });
+	var importObject = {
+		'env': {
+			'console_out_char' : con_add_char,
+			'console_out_int' : con_add_int,
+			'console_print' : con_print,
+			'fmodf': function(x,y) { return x%y; },
+			'powf': Math.pow,
+			'roundf':Math.round,
+			'sinf':Math.sin,
+			'cosf':Math.cos,
+			'tanf':Math.tan,
+			'_engine_grow_memory': function(x) { return instance_memory.grow(x); },
+			'gl_setup_loop' : function(){ setInterval(function(){window.requestAnimationFrame(animate)},framerate); },
+			'strarg_reset' : function(i) {strarg[i]="";},
+			'strarg_char' : function(i,c) {strarg[i]+=String.fromCharCode(c);},
+			'_engine_add_file_png' : load_image,
+			'_engine_add_file_bin' : load_bin,
+			'_engine_wasm_file_open' : function(i){filelist[i].pos = 0;},
+			'_engine_wasm_file_getc' : function(i){return filelist[i].buffer[filelist[i].pos++];},
+
+			'e_glViewport' : function(x,y,w,h){ gl.viewport(x,y,w,h);},
+			'e_glGenVertexArrays' : function(){},
+			'e_glBindVertexArray' : function(){},
+			'e_glBlendFunc' : gl.blendFunc,
+			'e_glEnable' : gl.enable,
+			'e_glDisable' : gl.disable,
+			'e_glUniform2f' : function(u,a,b){gl.uniform2f(unifloclist[u],a,b);},
+			'e_glUniform3f' : function(u,a,b,c){gl.uniform3f(unifloclist[u],a,b,c);},
+			'e_glUniform4f' : function(u,a,b,c,d){gl.uniform4f(unifloclist[u],a,b,c,d);},
+			'e_glEnableVertexAttribArray' : gl.enableVertexAttribArray,
+			'e_glVertexAttribPointer' : gl.vertexAttribPointer,
+			'e_glScissor' : function(x,y,w,h){gl.scissor(x,y,w,h);},
+			'e_glUseProgram' : function(p){gl.useProgram(proglist[p]);},
+			'e_glDeleteProgram' : gl.deleteProgram,
+			'e_glDeleteBuffer' : gl.deleteBuffer,
+			'e_glDeleteTexture' : gl.deleteTexture,
+			'e_glCreateBuffer' : function(){bufferlist.push(gl.createBuffer()); return bufferlist.length-1;},
+			'e_glCreateTexture' : gl.createTexture,
+			'e_glBindTexture' : gl.bindTexture,
+			'e_glTexParameteri' : gl.texParameteri,
+			'e_glTexImage2D' : gl.texImage2D,
+			'e_glGenerateMipmap' : gl.generateMipmap,
+			'e_glActiveTexture' : gl.activeTexture,
+			'e_glUniform1i' : gl.uniform1i,
+			'e_glBindBuffer' : gl.bindBuffer,
+			'e_glBufferData' : gl.bufferData,
+			'e_glDrawArrays' : function(c){gl.drawArrays(gl.TRIANGLES,0,c);},
+			'e_glGetUniformLocation_impl' : function(p){ unifloclist.push(gl.getUniformLocation(proglist[p],strarg[0])); return unifloclist.length-1;},
+			'e_glGetAttribLocation_impl' : function(p){ return gl.getAttribLocation(proglist[p],strarg[0]);},
+			'e_glClearColor' : function(a,r,g,b){gl.clearColor(a,r,g,b);},
+			'e_glClear' : function(m){gl.clear(m)},
+			'e_glCreateShader' : gl.createShader,
+			'e_glShaderSource' : gl.shaderSource,
+			'e_glCompileShader' : gl.compileShader,
+			'e_glGetShaderiv' : gl.getShaderParameter,
+			'e_glGetShaderInfoLog' : gl.getShaderInfoLog,
+			'e_glCreateProgram' : gl.createProgram,
+			'e_glLinkProgram' : gl.linkProgram,
+			'e_glAttachShader' : gl.attachShader,
+			'e_glDeleteShader' : gl.deleteShader,
+			'e_glSetupBlendMode' : function(){ gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND); },
+			'gl_shader_wasm' : function(v,vl,f,fl){
+				var vertShader = gl.createShader(gl.VERTEX_SHADER);
+         		gl.shaderSource(vertShader, strarg[0]);
+         		gl.compileShader(vertShader);
+				console.log('Shader compiler log: ' + gl.getShaderInfoLog(vertShader));
+				var fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+				gl.shaderSource(fragShader, strarg[1]);
+				gl.compileShader(fragShader);
+				console.log('Shader compiler log: ' + gl.getShaderInfoLog(fragShader));
+				var shaderProgram = gl.createProgram();
+				gl.attachShader(shaderProgram, vertShader);
+				gl.attachShader(shaderProgram, fragShader);
+				gl.linkProgram(shaderProgram);
+				proglist.push(shaderProgram);
+				return proglist.length-1;
+			},
+			'e_glBindBufferData' : function(bfr,s,d){ gl.bindBuffer(gl.ARRAY_BUFFER,bufferlist[bfr]); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(instance_memory.buffer,d,s), gl.DYNAMIC_DRAW); },
+			'e_glAttributeLayout' : function(t,s,o,fs) {gl.enableVertexAttribArray(t); gl.vertexAttribPointer(t,s,gl.FLOAT,0,fs,o);},
+			'gl_scissor' : function(x,y,w,h){gl.scissor(x,y,w,h); gl.enable(gl.SCISSOR_TEST);},
+			'gl_scissor_disable' : function() {gl.disable(gl.SCISSOR_TEST);},
+			'gl_image_width' : function(i){return filelist[i].width;},
+			'gl_image_height' : function(i){return filelist[i].height;},
+			'gl_create_texture' : function(i,w,h) { var tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, filelist[i]);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+       		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); texlist.push(tex); return texlist.length-1;},
+			'gl_texture' : function(t,tx,f){
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, texlist[tx]);
+				gl.uniform1i(unifloclist[t], 0);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f?gl.LINEAR:gl.NEAREST);
+			},
+		}
+	};
+	
+	fetch('export.wasm').then(response =>
+		response.arrayBuffer()
+	).then(bytes =>
+		WebAssembly.instantiate(bytes, importObject)
+	).then(result => {
+			instance_memory = result.instance.exports.memory;
+			gl_mousemove = result.instance.exports.gl_mousemove;
+			gl_mousedown = result.instance.exports._engine_wasm_mousedown;
+			gl_mouseup = result.instance.exports._engine_wasm_mouseup;
+			loop_func = result.instance.exports.gl_loop;
+			gl_run_func = result.instance.exports.gl_run;
+			result.instance.exports.main();
+		}
+	);
+}
+init();
+  
+	
+	</script>
+</body>
+</html>
